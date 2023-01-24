@@ -6,3 +6,10 @@ To reproduce the results in '/Paper Notebboks/Mouse_brain/topic_analysis_code_Mo
 
 
 # Installation
+
+To install CellPie we recommend creating a conda environment using the following commands: 
+
+1) Clone the git repo: git clone https://github.com/ManchesterBioinference/CellPie
+
+2) cd into CellPie directory and do: conda create -f envi_cellpie.yml
+
