@@ -13,3 +13,5 @@ To install CellPie we recommend creating a conda environment using the following
 
 2) cd into CellPie directory and do: conda create -f envi_cellpie.yml
 
+3) conda activate <env_name>
+
