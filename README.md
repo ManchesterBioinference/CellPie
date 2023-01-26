@@ -11,7 +11,7 @@ To install CellPie we recommend creating a conda environment using the following
 
 1) Clone the git repo: git clone https://github.com/ManchesterBioinference/CellPie
 
-2) cd into CellPie directory and do: conda create -f envi_cellpie.yml
+2) cd into CellPie directory and do: conda env create -f envi_cellpie.yml
 
 3) conda activate <env_name>
 
