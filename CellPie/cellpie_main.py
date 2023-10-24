@@ -9,12 +9,14 @@ import scipy
 from scipy import sparse
 import sys
 import logging
+from sklearn.neighbors import kneighbors_graph
 import scanpy as sc
 import squidpy as sq
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
-
+from scipy.sparse import csgraph
+from numpy.linalg import multi_dot
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -35,7 +37,7 @@ class intNMF():
 	
 	""" 
 
-	def __init__(self, adata, n_topics, epochs = 50, init = 'NNDSVD',dense=False,random_state = None, mod1_skew = 1):
+	def __init__(self, adata, n_topics, lam, epochs = 50,init = 'NNDSVD',tf_transf = False,dense=False,random_state = None, mod1_skew = 1):
 		"""
 		Parameters
 		----------
@@ -53,16 +55,18 @@ class intNMF():
 		self.init = init
 		self.dense = dense
 		self.loss = []
+		self.tf_transf = tf_transf
 		self.loss_expr = []
 		self.loss_im = []
 		self.epoch_times = []
 		self.epoch_iter = []
 		self.mod1_skew = mod1_skew
 		self.random_state = random_state
+		self.lam = lam
 
 	
 	
-	def fit(self, adata, legacy=False):
+	def fit(self, adata,tf_transf = False):
 	
 		"""optimise NMF. Uses accelerated Hierarchical alternating least squares algorithm proposeed here, but modified to
 		joint factorise two matrices. https://arxiv.org/pdf/1107.5194.pdf. Only required arguments are the matrices to use for factorisation.
@@ -77,11 +81,11 @@ class intNMF():
 		
 		start = time.perf_counter()
 
-		if legacy == True:
-			self.gene_expr = pd.DataFrame(data = adata.X, index = adata.obs.index, columns=adata.var_names) 
+		if type(adata.X).__name__ == 'csr_matrix' or 'SparseCSRView':
+			self.gene_expr = pd.DataFrame(data = adata.X.toarray(), index = adata.obs.index, columns=adata.var_names)
 		else:
-			self.gene_expr = pd.DataFrame(data = adata.X.A, index = adata.obs.index, columns=adata.var_names) 
-	
+			self.gene_expr = pd.DataFrame(data = adata.X, index = adata.obs.index, columns=adata.var_names)
+
 
 		# extract = extract_image_features(adata)
 
@@ -91,16 +95,26 @@ class intNMF():
 		
 		self.image_features[self.image_features < 0]=0
 
-		# if tf_transf == True:
+
+		if tf_transf == True:
 
 
-		# 	print('Transforming the matrices to TF-IDF ... ')
+			print('Transforming the matrices to TF-IDF ... ')
 
-		# 	expr_mat  = log_tf_idf(self.gene_expr)
-		# 	im_mat  = log_tf_idf(self.image_features)
+			expr_mat  = log_tf_idf(self.gene_expr)
+			im_mat  = log_tf_idf(self.image_features)
 
-		expr_mat = self.gene_expr
-		im_mat = self.image_features
+		else:
+			expr_mat = self.gene_expr
+			im_mat = self.image_features
+
+
+		# if np.any(expr_mat < 0):
+		# 	raise Exception('Some entries of the expression matrix are negative')
+
+		# if np.any(im_mat < 0):
+		# 	raise Exception('Some entries of the image features matrix are negative')
+
 		expr_mat = sparse.csr_matrix(expr_mat)
 		im_mat = sparse.csr_matrix(im_mat)
 			
@@ -114,14 +128,26 @@ class intNMF():
 		EXPR_mat = expr_mat
 		IM_mat = im_mat
 
+		# gr = calculate_graph(adata)
+		# ds = adata.obsp["spatial_connectivities"].todense()
+
+
+	   
+		# A = kneighbors_graph(adata.X.A, 2, mode='distance', include_self=True)
+		# A = A.toarray()
+		sc.pp.pca(adata)
+		sc.pp.neighbors(adata,knn=False,method='gauss')
+		A = adata.obsp['connectivities']
+		self.lap = csgraph.laplacian(A)
 		
-		# if tf_transf == True:
+		if tf_transf == True:
 
-		# 	nM_expr = sparse.linalg.norm(EXPR_mat, ord='fro')**2
-		# 	nM_im = sparse.linalg.norm(IM_mat, ord='fro')**2
+			nM_expr = sparse.linalg.norm(EXPR_mat, ord='fro')**2
+			nM_im = sparse.linalg.norm(IM_mat, ord='fro')**2
+		else:
 
-		nM_expr = sparse.linalg.norm(EXPR_mat, ord='fro')**2
-		nM_im = sparse.linalg.norm(IM_mat, ord='fro')**2
+			nM_expr = sparse.linalg.norm(EXPR_mat, ord='fro')**2
+			nM_im = sparse.linalg.norm(IM_mat, ord='fro')**2
 			
 		#intialise matrices. Default is random. Dense numpy arrays.
 		theta, phi_expr, phi_im = self._initialize_nmf(EXPR_mat, IM_mat, self.k, init=self.init,random_state=self.random_state)                
@@ -209,6 +235,8 @@ class intNMF():
 		self.theta = theta
 		self.phi_expr = pd.DataFrame(phi_expr)
 		self.phi_im = pd.DataFrame(phi_im)
+		self.error_expr = error_expr
+		self.error_im = error_im
 
 
 		
@@ -229,6 +257,7 @@ class intNMF():
 		print('Adding cell proportion values to adata.obs...')
 
 		n = theta_nor.shape[1]
+		
 		for i in range(n):
 			adata.obs[f"deconv_{i}"] = theta_nor.iloc[:,i].values
 
@@ -239,7 +268,7 @@ class intNMF():
 	
 
 
-  
+	
 		
 	def _HALS(self, V, UtU, UtM, eit1, alpha=0.5, delta=0.1):
 		"""Optimizing min_{V >= 0} ||M-UV||_F^2 with an exact block-coordinate descent schemeUpdate V.
@@ -321,7 +350,9 @@ class intNMF():
 	    eps0 = 1
 	    eit3 = 0  # iteration time
 	    n_it = 0
+	    lam = self.lam
 	    mod1_skew = self.mod1_skew
+
 	    
 	    while cnt == 1 or ((time.perf_counter()-eit2 < (eit1+eit3)*alpha) and (eps >= (delta**2)*eps0)):
 	        nodelta=0
@@ -330,12 +361,16 @@ class intNMF():
 	        
 	    
 	        for k in range(K):
+
 	            #print(W.shape, imgHHt.shape)
 	            #print(W.dot(imgHHt[:,k]).shape)
-	            deltaW = np.maximum(((mod1_skew*(rnaMHt[:,k] -W.dot(rnaHHt[:,k]) + (2-mod1_skew)*(imgMHt[:,k]-W.dot(imgHHt[:,k]))) )/
-                         ((mod1_skew*rnaHHt[k, k]) + ((2-mod1_skew)*imgHHt[k,k]))), -W[:, k])
+	            deltaW = np.maximum(((mod1_skew*(rnaMHt[:,k] -W.dot(rnaHHt[:,k])) + (2-mod1_skew)*(imgMHt[:,k]-W.dot(imgHHt[:,k])))/
+                         ((mod1_skew*rnaHHt[k, k]) + ((2-mod1_skew)*imgHHt[k,k])) ), -W[:, k]) 
+	            # deltaW = np.maximum(((mod1_skew*(rnaMHt[:,k] -W.dot(rnaHHt[:,k])) + (2-mod1_skew)*(imgMHt[:,k]-W.dot(imgHHt[:,k])))/
+             #             (lam*np.dot(self.lap,W[:,k])+(mod1_skew*rnaHHt[k, k]) + ((2-mod1_skew)*imgHHt[k,k])) ), -W[:, k]) 
 
-	            W[:,k] = W[:,k] + deltaW
+	            W[:,k] = W[:,k] + deltaW 
+	            # lam*np.trace(np.transpose(W)*self.lap*W)
 	            nodelta = nodelta + deltaW.dot(deltaW.T)
 	            W[W[:,k] == 0, k] =   1e-16*np.max(W)
 	            
@@ -349,9 +384,72 @@ class intNMF():
 	        n_it += 1
 	        
 	    return W, n_it
+
+
+	
+	# def _initialise_nmf_im_matrix(self, X, IM_mat, n_components, eps=1e-6, random_state=None,init='NNDSVD',dense=False):
+
+	# 	U,S,V = randomized_svd(IM_mat, n_components, random_state=random_state)
+		
+	# 		W, H_im = np.zeros(U.shape), np.zeros(V.shape)
+
+	# 		W[:, 0] = np.sqrt(S[0]) * np.abs(U[:, 0])
+
+	# 		H_im[0, :] = np.sqrt(S[0]) * np.abs(V[0, :])
+
+	# 		for j in range(1, n_components):
+	# 			x, y = U[:, j], V[j, :]
+
+	# 			# extract positive and negative parts of column vectors
+	# 			x_p, y_p = np.maximum(x, 0), np.maximum(y, 0)
+	# 			x_n, y_n = np.abs(np.minimum(x, 0)), np.abs(np.minimum(y, 0))
+
+	# 			# and their norms
+	# 			x_p_nrm, y_p_nrm = np.sqrt(squared_norm(x_p)), np.sqrt(squared_norm(y_p))
+	# 			x_n_nrm, y_n_nrm = np.sqrt(squared_norm(x_n)), np.sqrt(squared_norm(y_n))
+
+	# 			m_p, m_n = x_p_nrm * y_p_nrm, x_n_nrm * y_n_nrm
+
+	# 				# choose update
+	# 			if m_p > m_n:
+	# 				u = x_p / x_p_nrm
+	# 				v = y_p / y_p_nrm
+	# 				sigma = m_p
+	# 			else:
+	# 				u = x_n / x_n_nrm
+	# 				v = y_n / y_n_nrm
+	# 				sigma = m_n
+
+	# 			lbd = np.sqrt(S[j] * sigma)
+	# 			W[:, j] = lbd * u
+	# 			H_im[j, :] = lbd * v
+
+	# 		if dense == True:
+	# 		# NNDSVDa
+	# 			avg = IM_mat.mean()
+	# 			W[W == 0] = avg
+	# 			H_im[H_im == 0] = avg
+	# 			H = safe_sparse_dot(np.linalg.pinv(W), X,dense_output=True)
+	# 			H[H < eps] = 0
+
+	# 			H = safe_sparse_dot(np.linalg.pinv(W), X,dense_output=True)
+	# 			H[H < eps] = 0
+
+	# 		else:	
+	# 			W[W < eps] = 0
+	# 			H_im[H_im < eps] = 0
+			
+	# 			H = safe_sparse_dot(np.linalg.pinv(W), X)
+	# 			H[H < eps] = 0
+
+			 
+	# 	return H_im
+
+	
+	
 	### PLAN OT CHANGE THIS TO GILLIS METHOD WITH AUTOMATIC TOPIC DETECTION
 	#https://github.com/CostaLab/scopen/blob/6be56fac6470e5b6ecdc5a2def25eb60ed6a1bcc/scopen/MF.py#L696    
-	def _initialize_nmf(self, X, IM_mat, n_components, eps=1e-6, random_state=None,init='random',dense=False):
+	def _initialize_nmf(self, X, IM_mat, n_components, eps=1e-6, random_state=None,init='NNDSVD',dense=False):
 
 			"""Algorithms for NMF initialization.
 			Computes an initial guess for the non-negative
@@ -407,7 +505,6 @@ class intNMF():
 				avg_im = np.sqrt(IM_mat.mean() / n_components)
 				
 				rng = check_random_state(random_state)
-				print(random_state)
 				H = avg * rng.randn(n_components, n_features)
 				W = avg * rng.randn(n_samples, n_components)
 				H_im = avg_im * rng.randn(n_components, IM_mat.shape[1])
@@ -443,7 +540,7 @@ class intNMF():
 			# X_mean = X - X.mean(axis=1)
 			if self.mod1_skew != 0:
 
-				U, S,V = randomized_svd(X, n_components, random_state=random_state)
+				U, S,V = randomized_svd(X, n_components,random_state=random_state)
 		
 				W, H = np.zeros(U.shape), np.zeros(V.shape)
 
@@ -496,9 +593,70 @@ class intNMF():
 
 				else:	
 					W[W < eps] = 0
-					H[H < eps] = 0
+					H[H < eps] = 0	
+
+
 			
 					H_im = safe_sparse_dot(np.linalg.pinv(W), IM_mat)
+					H_im[H_im < eps] = 0
+
+			elif self.mod1_skew == 2:
+
+				U, S,V = randomized_svd(X, n_components, random_state=random_state)
+		
+				W, H = np.zeros(U.shape), np.zeros(V.shape)
+
+			# The leading singular triplet is non-negative
+			# so it can be used as is for initialization.
+				W[:, 0] = np.sqrt(S[0]) * np.abs(U[:, 0])
+
+				H[0, :] = np.sqrt(S[0]) * np.abs(V[0, :])
+
+				for j in range(1, n_components):
+					x, y = U[:, j], V[j, :]
+
+				# extract positive and negative parts of column vectors
+					x_p, y_p = np.maximum(x, 0), np.maximum(y, 0)
+					x_n, y_n = np.abs(np.minimum(x, 0)), np.abs(np.minimum(y, 0))
+
+				# and their norms
+					x_p_nrm, y_p_nrm = np.sqrt(squared_norm(x_p)), np.sqrt(squared_norm(y_p))
+					x_n_nrm, y_n_nrm = np.sqrt(squared_norm(x_n)), np.sqrt(squared_norm(y_n))
+
+					m_p, m_n = x_p_nrm * y_p_nrm, x_n_nrm * y_n_nrm
+
+					# choose update
+					if m_p > m_n:
+						u = x_p / x_p_nrm
+						v = y_p / y_p_nrm
+						sigma = m_p
+					else:
+						u = x_n / x_n_nrm
+						v = y_n / y_n_nrm
+						sigma = m_n
+
+					lbd = np.sqrt(S[j] * sigma)
+					W[:, j] = lbd * u
+					H[j, :] = lbd * v
+
+				if dense == True:
+			# NNDSVDa
+					avg = X.mean()
+					W[W == 0] = avg
+					H[H == 0] = avg
+					H_im = safe_sparse_dot(np.linalg.pinv(W), IM_mat,dense_output=True)
+					H_im[H_im < eps] = 0
+				# n1 = len(W[W==0])
+				# n2 = len(H[H==0])
+				# W[W==0] = avg*np.random.uniform(n1,1)/100
+				# H[H==0] = avg*np.random.uniform(n2,1)/100
+					H_im = 0
+					H_im[H_im < eps] = 0
+
+				else:	
+					W[W < eps] = 0
+					H[H < eps] = 0	
+					H_im = 0
 					H_im[H_im < eps] = 0
 			else:
 				U,S,V = randomized_svd(IM_mat, n_components, random_state=random_state)
@@ -558,11 +716,20 @@ class intNMF():
 			return W, H, H_im
 
 
+def calculate_graph(adata):
+	from scipy.sparse import csgraph
+
+	G = sq.gr.spatial_neighbors(adata, n_rings=2,  coord_type= 'Grid', n_neighs=6)
+
+
+
+
+
 def extract_image_features(adata, u_img = False, img = None, layer = None, 
 						library_id = None, features = 'histogram',
-						mask_circle = True,
-						scale_img = 0.5,
-						spot_scale = 4, 
+						mask_circle = False,
+						scale_img = 1,
+						spot_scale = 2.5, 
 						key_added="features", show_progress_bar = True, n_jobs = None):
 
 		"""Extract image features using squidpy.im.calculate_image_features function from Squidpy https://squidpy.readthedocs.io/en/stable/#
@@ -584,7 +751,7 @@ def extract_image_features(adata, u_img = False, img = None, layer = None,
 		else:
 			# img: High-resolution image
 			img = sq.im.ImageContainer(
-				adata.uns["spatial"][library_id]["images"]["hires"][:,:,0:3],
+				adata.uns["spatial"][library_id]["images"]["hires"],
 				scale=adata.uns["spatial"][library_id]["scalefactors"]["tissue_hires_scalef"]
 			)
 		print('Extracting Image Features ...')
@@ -594,7 +761,39 @@ def extract_image_features(adata, u_img = False, img = None, layer = None,
 		adata.obsm[key_added].columns = ad.utils.make_index_unique(adata.obsm[key_added].columns)
 
 
-def model_selection(adata, n_components_start, n_components_end):
+# def model_selection(adata, n_components_start, n_components_end):
+
+# 	""" Model selection based on elbow method: Calculates the within-cluster-sum of squared errors (wss) for different values of n_components and chooses the n_components 
+# 	for which WSS starts to level off
+# 	:adata: anndata object with spatial data
+# 	:n_components_start: number of topics start range 
+# 	:n_components_end:  number of topics end range
+
+# 	"""
+
+# 	wss= []
+# 	for i in range(n_components_start,n_components_end):
+
+# 		kmeans = KMeans(n_clusters=i, init ='k-means++', max_iter=300, n_init=10,random_state=0)
+# 		kmeans.fit(adata.X.A)
+# 		wss.append(kmeans.inertia_)
+
+# 	plt.plot(range(n_components_start,n_components_end),wss)
+# 	plt.title('Model Selection Elbow')
+# 	plt.xlabel('Number of Topics')
+# 	plt.ylabel('Inertia')
+# 	plt.show()
+
+
+def rrssq(adata,theta,phi_expr):
+
+	norm = sc.pp.normalize_total(adata)
+	actual = adata.X.A
+
+	pred = np.matmul(theta,phi_expr)
+
+
+def model_selection(adata,n_components_start,n_components_end,niter=30):
 
 	""" Model selection based on elbow method: Calculates the within-cluster-sum of squared errors (wss) for different values of n_components and chooses the n_components 
 	for which WSS starts to level off
@@ -603,6 +802,29 @@ def model_selection(adata, n_components_start, n_components_end):
 	:n_components_end:  number of topics end range
 
 	"""
+	# sc.pp.normalize_total(adata)
+	# extract_image_features(adata,
+ #    scale_img = 0.2,
+ #    spot_scale = 4)
+
+	# for i in range(0,niter):
+
+	# 	intNMF(adata,epochs = 50, init = 'random',mod1_skew=1)
+	# 	nmf_model.fit(adata)
+
+	# 	_, idx = argmax(self.H, axis=0)
+ #        mat1 = repmat(idx, self.V.shape[1], 1)
+ #        mat2 = repmat(idx.T, 1, self.V.shape[1])
+ #        cons = elop(mat1, mat2, eq)
+ #        if not hasattr(self, 'consold'):
+ #            self.cons = cons
+ #            self.consold = np.mat(np.logical_not(cons))
+ #        else:
+ #            self.consold = self.cons
+ #            self.cons = cons
+ #        conn_change = elop(self.cons, self.consold, ne).sum()
+ #        return conn_change > 0
+
 
 	wss= []
 	for i in range(n_components_start,n_components_end):
@@ -611,12 +833,12 @@ def model_selection(adata, n_components_start, n_components_end):
 		kmeans.fit(adata.X.A)
 		wss.append(kmeans.inertia_)
 
+
 	plt.plot(range(n_components_start,n_components_end),wss)
 	plt.title('Model Selection Elbow')
 	plt.xlabel('Number of Topics')
 	plt.ylabel('Inertia')
 	plt.show()
-
 
 
 	
