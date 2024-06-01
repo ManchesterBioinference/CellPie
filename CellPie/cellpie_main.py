@@ -81,7 +81,7 @@ class intNMF():
 		
 		start = time.perf_counter()
 
-		if type(adata.X).__name__ == 'csr_matrix' or 'SparseCSRView':
+		if type(adata.X).__name__ in ['csr_matrix', 'SparseCSRView']:
 			self.gene_expr = pd.DataFrame(data = adata.X.toarray(), index = adata.obs.index, columns=adata.var_names)
 		else:
 			self.gene_expr = pd.DataFrame(data = adata.X, index = adata.obs.index, columns=adata.var_names)
