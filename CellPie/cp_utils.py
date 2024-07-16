@@ -9,9 +9,6 @@ import pickle as pkl
 from sklearn.metrics import mean_squared_error
 
 
-
-
-
 def preprocess_data(adata, min_cells=100):
     print(min_cells)
     sc.pp.filter_genes(adata, min_cells=min_cells)
@@ -20,8 +17,6 @@ def preprocess_data(adata, min_cells=100):
     adata.obsm['features'] = np.log1p(adata.obsm['features'])
 
     return adata
-
-
 
 def center_data(adata):
     if type(adata.X).__name__ in ['csr_matrix', 'SparseCSRView']:
@@ -39,8 +34,6 @@ def center_data(adata):
     image_features -= img_means
 
     return adata
-
-
 
 def model_selection(adata, n_topics: list, mod1_skew=1, init= 'nndsvd',random_state=None, reps=3):
     all_errors = pd.DataFrame()
@@ -115,7 +108,6 @@ def model_selection(adata, n_topics: list, mod1_skew=1, init= 'nndsvd',random_st
 
     return all_errors.idxmin(), all_errors
 
-
 def log_tf_idf(mat_in, scale = 10000):
     """
     Return a TF-IDF transformed matrix.
@@ -148,7 +140,6 @@ def log_tf_idf(mat_in, scale = 10000):
 def NormalizeData(data):
 
     return (data / data.sum())
-
 
 def plot_topic_proportions(adata,topics):
 
