@@ -42,7 +42,7 @@ class intNMF():
 	
 	""" 
 
-	def __init__(self, adata, n_topics, reg = None,epochs = 50, lam=0,init = 'NNDSVD',l1_weight=1e-4, tol=1e-4,dense=False,random_state = None, mod1_skew = 1,max_time=None):
+	def __init__(self, adata, n_topics, reg = None,epochs = 50, lam=0,init = 'NNDSVD',l1_weight=1e-4, tol=1e-4,dense=False,random_state = 123, mod1_skew = 1,max_time=None):
 		"""
 		Parameters
 		----------
@@ -105,7 +105,7 @@ class intNMF():
 		expr_mat: scipy matrix of spatial transcriptomics gene expression
 		im_mat: scipy matrix of image features
 		"""
-	
+		np.random.default_rng(self.random_state)
 		start = time.perf_counter()
 
 		if type(adata.X).__name__ in ['csr_matrix', 'SparseCSRView']:
@@ -152,7 +152,7 @@ class intNMF():
 		nM_im = sparse.linalg.norm(IM_mat, ord='fro')**2
 			
 
-		self.theta, self.phi_expr, self.phi_im = self._initialize_nmf(EXPR_mat, IM_mat, self.k, init=self.init, random_state=self.random_state)
+		self.theta, self.phi_expr, self.phi_im = self._initialize_nmf(EXPR_mat, IM_mat, self.k, init=self.init)
 
 		if fixed_H_im is not None:
 			self.phi_im = pd.DataFrame(fixed_H_im)             
@@ -269,7 +269,7 @@ class intNMF():
 
 		theta_nor = pd.DataFrame(l)
 
-		print('Adding topic values to adata.obs ...')
+		print('Adding factor values to adata.obs ...')
 
 		n = theta_nor.shape[1]
 		
@@ -471,9 +471,9 @@ class intNMF():
 	
 	### PLAN OT CHANGE THIS TO GILLIS METHOD WITH AUTOMATIC TOPIC DETECTION
 	#https://github.com/CostaLab/scopen/blob/6be56fac6470e5b6ecdc5a2def25eb60ed6a1bcc/scopen/MF.py#L696    
-	def _initialize_nmf(self, X, IM_mat, n_components, fixed_W=None,fixed_H_expr=None,fixed_H_im=None, eps=1e-6, random_state=None ,init='nnsdvd'):
+	def _initialize_nmf(self, X, IM_mat, n_components, fixed_W=None,fixed_H_expr=None,fixed_H_im=None, eps=1e-6,init='nnsdvd'):
 
-			"""Algorithms for NMF initialization.
+			"""Algorithms for NMF initialization
 			Computes an initial guess for the non-negative
 			rank k matrix approximation for X: X = WH
 			Parameters IM_mat_tfidf_log
@@ -511,6 +511,7 @@ class intNMF():
 			C. Boutsidis, E. Gallopoulos: SVD based initialization: A head start for
 			nonnegative matrix factorization - Pattern Recognition, 2008, 
 			http://tinyurl.com/nndsvd"""
+			np.random.default_rng(self.random_state)
 
 			n_samples, n_features = X.shape
 	
@@ -589,7 +590,7 @@ class intNMF():
 				# X -= X_mean
 				# IM_mat -= IM_mean
 				# U, S, Vt = randomized_svd(X, n_components,random_state=random_state)
-				U, S, Vt = svds(X, k=n_components, which='LM', random_state=random_state)
+				U, S, Vt = svds(X, k=n_components, which='LM')
 				U, Vt = U[:, ::-1], Vt[::-1, :]
 				S = S[::-1]
 
@@ -787,4 +788,3 @@ class InvalidMatType(Exception):
 	"""Raised if the mat is invalid."""
 	pass
 	
-
