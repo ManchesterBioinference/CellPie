@@ -4,9 +4,14 @@ import numpy as np
 import scanpy as sc
 import matplotlib.pyplot as plt
 from squidpy.im._feature_mixin import FeatureMixin
+import spatialdata as sd
 import spatialdata_io
+import json
+
 
 # the features_histogram function has been taken from: https://github.com/scverse/squidpy
+
+
 def features_histogram(
     arr: np.ndarray,
     layer: str = 'image_array',
@@ -73,7 +78,7 @@ def flatten_features(features, scale):
         flattened[f"{key}_scale{scale}"] = value
     return flattened
 
-def extract_features(adata, img_path, spot_scale: list, scale=None, sdata=False):
+def extract_features(adata, img_path, spot_scale: list, bins: int = 10, scale=None):
     image = cv2.imread(img_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
@@ -89,7 +94,7 @@ def extract_features(adata, img_path, spot_scale: list, scale=None, sdata=False)
     diameter = adata.uns['spatial'][img_key]['scalefactors']['spot_diameter_fullres']
 
     win = diameter * scale
-    print(scale)
+    
     for spot_scale in spot_scale:
         scale_features = []
         for idx, row in SN.iterrows():
@@ -107,10 +112,10 @@ def extract_features(adata, img_path, spot_scale: list, scale=None, sdata=False)
                 spot_scale=spot_scale,
                 feature_name="histogram",
                 channels=[0, 1, 2],  # R, G, B channels
-                bins=10,
+                bins=bins,
                 v_range=(0, 256)
             )
-            
+         
             # Flatten and store the features
             flattened_features = flatten_features(hist_features, spot_scale)
             scale_features.append(flattened_features)
@@ -124,5 +129,66 @@ def extract_features(adata, img_path, spot_scale: list, scale=None, sdata=False)
     features_df.index = adata.obs_names
     adata.obsm['features'] = features_df
     adata.obsm['features'] = adata.obsm['features'].loc[:, (adata.obsm['features'] != 0).any(axis=0)]
+
+    return features_df
+
+
+
+
+
+def extract_features_visiumhd(sdata, img_path, json_path, spot_scale: list, bins: int = 10, resolution:str = 'square_016um',scale=None):
+    image = cv2.imread(img_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    with open(json_path, 'r') as file:
+        jsondata = json.load(file) 
+
+    SN = pd.DataFrame()
+    SN['spot_name'] = sdata.tables[resolution].obs_names
+
+    cropped_images = []
+    all_features = []
+
+
+    if scale is None:
+        scale = jsondata.get('tissue_hires_scalef')
+    diameter = jsondata.get('spot_diameter_fullres')
+
+    win = diameter * scale
+    
+    for spot_scale in spot_scale:
+        scale_features = []
+        for idx, row in SN.iterrows():
+            y, x = int(sdata.tables[resolution].obsm['spatial'][idx][1] * scale), int(sdata.tables[resolution].obsm['spatial'][idx][0] * scale)
+            radius = int(round(win // 2 * spot_scale))
+            cropped_image = image[y - radius:y + radius, x - radius:x + radius]
+        
+            cropped_images.append(cropped_image)
+            
+            # Calculate the histogram features
+            hist_features = features_histogram(
+                cropped_image,
+                layer='image_array',
+                library_id=None,
+                spot_scale=spot_scale,
+                feature_name="histogram",
+                channels=[0, 1, 2],  # R, G, B channels
+                bins=bins,
+                v_range=(0, 256)
+            )
+         
+            # Flatten and store the features
+            flattened_features = flatten_features(hist_features, spot_scale)
+            scale_features.append(flattened_features)
+        
+        # Convert the list of feature dictionaries for this scale into a DataFrame
+        scale_df = pd.DataFrame(scale_features)
+        all_features.append(scale_df)
+
+    # Concatenate all the features DataFrames horizontally
+    features_df = pd.concat(all_features, axis=1)
+    features_df.index = sdata[resolution].obs_names
+    sdata.tables[resolution].obsm['features'] = features_df
+    sdata.tables[resolution].obsm['features'] = sdata.tables[resolution].obsm['features'].loc[:, (sdata.tables[resolution].obsm['features'] != 0).any(axis=0)]
 
     return features_df
