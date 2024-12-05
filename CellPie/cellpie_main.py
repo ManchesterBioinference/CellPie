@@ -180,13 +180,14 @@ class intNMF():
 			eit1 = time.perf_counter() - eit1
 
 			if i == 0:
-				if fixed_W is None:
-					scale = ((np.sum(rnaMHt * self.theta) / np.sum(rnaHHt * (self.theta.T.dot(self.theta)))) + np.sum(imgMHt * self.theta) / np.sum(imgHHt * (self.theta.T.dot(self.theta)))) / 2
-					self.theta = self.theta * scale
-					self.theta, theta_it = self._HALS_W(self.theta, rnaHHt, rnaMHt, imgHHt, imgMHt, eit1)
-				else:
-					self.theta = fixed_W
-					theta_it = 0
+				scale = ((np.sum(rnaMHt * self.theta) / np.sum(rnaHHt * (self.theta.T.dot(self.theta)))) + np.sum(imgMHt * self.theta) / np.sum(imgHHt * (self.theta.T.dot(self.theta)))) / 2
+				self.theta = self.theta * scale
+			if fixed_W is None:
+
+				self.theta, theta_it = self._HALS_W(self.theta, rnaHHt, rnaMHt, imgHHt, imgMHt, eit1)
+			else:
+				self.theta = fixed_W
+				theta_it = 0
 			
 			#update phi_expr
 			eit1 = time.perf_counter()
