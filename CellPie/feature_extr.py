@@ -4,6 +4,7 @@ import numpy as np
 import scanpy as sc
 import matplotlib.pyplot as plt
 from squidpy.im._feature_mixin import FeatureMixin
+from sklearn.preprocessing import MinMaxScaler
 import spatialdata as sd
 import spatialdata_io
 import json
@@ -19,7 +20,7 @@ def features_histogram(
     spot_scale=None,
     feature_name: str = "histogram",
     channels: list[int] | None = None,
-    bins: int = 10,
+    bins: int = 100,
     v_range: tuple[int, int] | None = None,
 ) -> dict:
     """
@@ -130,6 +131,10 @@ def extract_features(adata, img_path, spot_scale: list, bins: int = 10, scale=No
     adata.obsm['features'] = features_df
     adata.obsm['features'] = adata.obsm['features'].loc[:, (adata.obsm['features'] != 0).any(axis=0)]
 
+    scaler = MinMaxScaler()
+    scaled=scaler.fit(adata.obsm['features'])
+    adata.obsm['features'] = scaled.transform(adata.obsm['features'])
+
     return features_df
 
 
@@ -190,5 +195,9 @@ def extract_features_visiumhd(sdata, img_path, json_path, spot_scale: list, bins
     features_df.index = sdata[resolution].obs_names
     sdata.tables[resolution].obsm['features'] = features_df
     sdata.tables[resolution].obsm['features'] = sdata.tables[resolution].obsm['features'].loc[:, (sdata.tables[resolution].obsm['features'] != 0).any(axis=0)]
+
+    scaler = MinMaxScaler()
+    scaled=scaler.fit(sdata.tables[resolution].obsm['features'])
+    sdata.tables[resolution].obsm['features'] = scaled.transform(sdata.tables[resolution].obsm['features'])
 
     return features_df
