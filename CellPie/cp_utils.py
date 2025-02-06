@@ -9,14 +9,18 @@ import pickle as pkl
 from sklearn.metrics import mean_squared_error
 
 
-def preprocess_data(adata, min_cells=100):
+
+
+
+def preprocess_data(adata, min_cells=10):
     print(min_cells)
     sc.pp.filter_genes(adata, min_cells=min_cells)
     sc.pp.normalize_total(adata)
     sc.pp.log1p(adata)
-    adata.obsm['features'] = np.log1p(adata.obsm['features'])
 
     return adata
+
+
 
 def center_data(adata):
     if type(adata.X).__name__ in ['csr_matrix', 'SparseCSRView']:
@@ -35,65 +39,74 @@ def center_data(adata):
 
     return adata
 
-def model_selection(adata, n_topics: list, mod1_skew=1, init= 'nndsvd',random_state=None, reps=3):
+
+def model_selection(adata, n_topics: list, mod1_skew=1,epochs=20,init= 'random',random_state=123):
     all_errors = pd.DataFrame()
 
-    for i in range(reps):
-        np.random.seed(random_state)
-        errors = []
-        mean = []
-        n_samples, n_features = adata.shape
 
-        r = n_samples // 2
-        s = n_features // 2
+    np.random.default_rng(random_state)
+    errors = []
+    mean = []
+    n_samples, n_features = adata.shape
 
-        A_indices_rows = np.arange(r)
-        B_indices_rows = np.arange(r)
-        C_indices_rows = np.arange(r, n_samples)
-        D_indices_rows = np.arange(r, n_samples)
+    r = n_samples // 2
+    s = n_features // 2
 
-        A_indices_cols = np.arange(s)
-        B_indices_cols = np.arange(s, n_features)
-        C_indices_cols = np.arange(s)
-        D_indices_cols = np.arange(s, n_features)
+    A_indices_rows = np.arange(r)
+    B_indices_rows = np.arange(r)
+    C_indices_rows = np.arange(r, n_samples)
+    D_indices_rows = np.arange(r, n_samples)
 
-        A = adata[A_indices_rows, :][:, A_indices_cols]
-        B = adata[B_indices_rows, :][:, B_indices_cols]
-        C = adata[C_indices_rows, :][:, C_indices_cols]
-        D = adata[D_indices_rows, :][:, D_indices_cols]
+    A_indices_cols = np.arange(s)
+    B_indices_cols = np.arange(s, n_features)
+    C_indices_cols = np.arange(s)
+    D_indices_cols = np.arange(s, n_features)
+
+    A = adata[A_indices_rows, :][:, A_indices_cols]
+    B = adata[B_indices_rows, :][:, B_indices_cols]
+    C = adata[C_indices_rows, :][:, C_indices_cols]
+    D = adata[D_indices_rows, :][:, D_indices_cols]
     
-        for k in n_topics:
+    for k in n_topics:
             # Fit the model on block D
-            print('r',random_state)
-            model_D = intNMF(D, n_topics=k, random_state=random_state, init=init,mod1_skew=mod1_skew)
-            model_D.fit(D)
+        np.random.default_rng(random_state)
+        print(mod1_skew)
+        model_D = intNMF(D, n_topics=k, random_state=random_state, init=init,epochs=epochs,mod1_skew=mod1_skew)
+        model_D.fit(D)
 
 
-            W_D = model_D.theta
-            H_D = model_D.phi_expr.values
+        W_D = model_D.theta
+        H_D = model_D.phi_expr.values
 
-            model_B = intNMF(B, n_topics=k, random_state=random_state, init=init, mod1_skew=mod1_skew)
-            model_B.fit(B, fixed_H_expr=H_D)  # Fix H to H_D
-            W_B = model_B.theta
+        model_B = intNMF(B, n_topics=k, random_state=random_state, init=init,epochs=epochs,mod1_skew=mod1_skew)
+        model_B.fit(B, fixed_H_expr=H_D)  # Fix H to H_D
+        W_B = model_B.theta
 
-            model_C = intNMF(C, n_topics=k, random_state=random_state, init=init,mod1_skew=mod1_skew)
-            model_C.fit(C, fixed_W=W_D)  # Fix W to W_D
-            H_C = model_C.phi_expr.values
+        model_C = intNMF(C, n_topics=k, random_state=random_state, init=init,epochs=epochs,mod1_skew=mod1_skew)
+        model_C.fit(C, fixed_W=W_D)  # Fix W to W_D
+        H_C = model_C.phi_expr.values
 
             # Reconstruct A
-            A_pred = W_B @ H_C
+        A_pred = W_B @ H_C
 
-            # Calculate the error
-            error = mean_squared_error(A.X.toarray(), A_pred)
-            errors.append(error)
-            error_mean = np.mean(errors)
-            mean.append((k, error_mean))
+        A_data = A.X.toarray()
+        if np.isnan(A_data).any():
+            print("Warning: A contains NaN values. Replacing NaNs with 0.")
+
+
+        if np.isnan(A_pred).any():
+            print("Warning: A_pred contains NaN values. Replacing NaNs with 0.")
+
+        error = mean_squared_error(A.X.toarray(), A_pred)
+        errors.append(error)
+        error_mean = np.mean(errors)
+        mean.append((k, error_mean))
         
-        error_df = pd.DataFrame(mean, columns=['k', 'mean_error'])
-        error_df.index = error_df['k']
+    error_df = pd.DataFrame(mean, columns=['k', 'mean_error'])
+    error_df.index = error_df['k']
         
         # Save the mean_error column into all_errors DataFrame
-        all_errors[f'rep_{i+1}'] = error_df['mean_error']
+    all_errors['factor'] = error_df['mean_error']
     
     # Plot the results
     for col in all_errors.columns:
@@ -106,7 +119,10 @@ def model_selection(adata, n_topics: list, mod1_skew=1, init= 'nndsvd',random_st
 
     print('The optimal number of factors for each rep is:', all_errors.idxmin())
 
+
     return all_errors.idxmin(), all_errors
+
+
 
 def log_tf_idf(mat_in, scale = 10000):
     """
@@ -141,6 +157,7 @@ def NormalizeData(data):
 
     return (data / data.sum())
 
+
 def plot_topic_proportions(adata,topics):
 
     from re import sub # create nice names
@@ -154,3 +171,4 @@ def plot_topic_proportions(adata,topics):
                 size=1, img_key='hires', 
                 alpha_img=0.1
                  )
+
