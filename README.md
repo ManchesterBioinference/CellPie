@@ -19,5 +19,5 @@ To install CellPie we recommend creating a conda environment using the following
 4) You can load a jupyter notebook by typing 'jupyter notebook' in the command line
 
 
-⚠️ **Warning:** Please note: There is a bug in CellPie v0 and v01. Please use the main version instead.
+⚠️ **Warning:** Please note: There is a bug in the branches main_v0 and main_v01. Please use the main version instead.
 
