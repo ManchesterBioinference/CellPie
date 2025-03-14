@@ -1,22 +1,29 @@
-# CellPie
+# CellPie  
 
-CellPie is a scalable spatial transcriptomics factor discovery method via joint non-negative matrix factorization. Preprint is available here [https://www.biorxiv.org/content/10.1101/2023.09.29.560213v2](https://www.biorxiv.org/content/10.1101/2023.09.29.560213v3)
+**CellPie** is a scalable method for spatial transcriptomics factor discovery via joint non-negative matrix factorization.  
+📄 **Preprint available:** [biorxiv.org](https://www.biorxiv.org/content/10.1101/2023.09.29.560213v3)  
 
 <p align="center">
-  <img src="cellpie_img.png" alt="Alt text" width="300">
+  <img src="cellpie_img.png" alt="CellPie Logo" width="350">
 </p>
 
-# Installation
+---
 
-To install CellPie we recommend creating a conda environment using the following commands: 
+## 🚀 Installation  
 
-1) Clone the git repo: git clone https://github.com/ManchesterBioinference/CellPie
+To install **CellPie**, run the following commands in your terminal:  
 
-2) cd into CellPie directory and do: conda env create -f environment_cellpie.yml
+```bash
+# Clone the repository
+git clone https://github.com/ManchesterBioinference/CellPie  
+cd CellPie  
 
-3) conda activate cellpie_env
+# Create and activate the Conda environment  
+conda env create -f environment_cellpie.yml  
+conda activate cellpie_env  
 
-4) You can load a jupyter notebook by typing 'jupyter notebook' in the command line
+# Launch Jupyter Notebook  
+jupyter notebook  
 
 
 ⚠️ **Warning:** There is a bug in the branches main_v0 and main_v01. Please use the main version instead.
