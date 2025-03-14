@@ -1,6 +1,7 @@
 # CellPie  
 
 **CellPie** is a scalable method for spatial transcriptomics factor discovery via joint non-negative matrix factorization.  
+
 📄 **Preprint available:** [biorxiv.org](https://www.biorxiv.org/content/10.1101/2023.09.29.560213v3)  
 
 <p align="center">
@@ -8,6 +9,7 @@
 </p>
 
 ---
+
 
 ## 🚀 Installation  
 
@@ -24,7 +26,8 @@ conda activate cellpie_env
 
 # Launch Jupyter Notebook  
 jupyter notebook  
+```
 
-
-⚠️ **Warning:** There is a bug in the branches main_v0 and main_v01. Please use the main version instead.
+⚠️ Important Notice
+🚨 Bug Alert: There is a bug in the main_v0 and main_v01 branches, where the W matrix is not updated properly. This issue has been solved in the main branch. So, please only use the main branch instead.
 
