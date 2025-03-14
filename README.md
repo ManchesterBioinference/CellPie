@@ -2,7 +2,9 @@
 
 CellPie is a scalable spatial transcriptomics factor discovery method via joint non-negative matrix factorization. Preprint is available here [https://www.biorxiv.org/content/10.1101/2023.09.29.560213v2](https://www.biorxiv.org/content/10.1101/2023.09.29.560213v3)
 
-![Alt text](cellpie_img.png)
+<p align="center">
+  <img src="cellpie_img.png" alt="Alt text">
+</p>
 
 # Installation
 
