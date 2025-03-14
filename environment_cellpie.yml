@@ -295,4 +295,4 @@ dependencies:
       - yarl==1.9.4
       - zarr==2.18.2
       - zict==3.0.0
-prefix: /Users/user/anaconda3/envs/cellpie_env_paper
+prefix: /Users/user/anaconda3/envs/cellpie_env
